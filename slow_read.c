@@ -8,6 +8,9 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
+#include <getopt.h>
+
+
 const int error(const char *msg)
 {
     perror(msg);
@@ -69,12 +72,45 @@ const int attack(const char *dest, const int portno)
 
 int main(int argc, char **argv)
 {
-    if (argc < 3) {
-       fprintf(stderr,"usage %s hostname port\n", argv[0]);
-       exit(EXIT_FAILURE);
+    int numThreads;
+    int ch;
+    char host[256];
+    int port;
+    
+    numThreads = 1;
+    host[0] = 0;
+    port = -1;
+
+    struct option opts[] = {
+        { "host",       required_argument,  NULL,   'h' },
+        { "port",       required_argument,  NULL,   'p' },
+        { "threads",    required_argument,  NULL,   't' },
+        { NULL,         0,                  NULL,   0 }
+    };
+    
+    while((ch = getopt_long(argc, argv, "h:p:t:", opts, NULL)) != -1)
+    {
+        switch(ch)
+        {
+        case 'h':
+            printf("Host: %s\n", optarg);
+            strncpy(host, optarg, 255);
+            host[255] = '\0';
+            break;
+        case 'p':
+            printf("Port: %s\n", optarg);
+            port = (int)strtol(optarg, NULL, 10);
+            break;
+        case 't':
+            printf("Threads: %s", optarg);
+            numThreads = (int)strtol(optarg, NULL, 10);
+            break;
+        default:
+            return error("Check your parameters");
+        }
     }
 
-    attack(argv[1], atoi(argv[2]));
+    attack(host, port);
 
     return 0;
 }
